@@ -1,0 +1,139 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: coding-platform-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coding-platform-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: coding-platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coding-platform-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coding-platform-backend
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      APP_ENV: ${APP_ENV}
+      EXECUTION_WORKSPACE: ${EXECUTION_WORKSPACE}
+      DOCKER_HOST_WORKSPACE: ${DOCKER_HOST_WORKSPACE:-./executions}
+      EXECUTION_TIMEOUT: 180
+      MAX_MEMORY_MB: 2048
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_HOST_WORKSPACE:-./executions}:${EXECUTION_WORKSPACE:-/tmp/executions}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - coding-platform-network
+    group_add:
+      - "999"
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: coding-platform-prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - coding-platform-network
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: coding-platform-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - coding-platform-network
+
+  frontend:
+    build:
+      context: ../coding-platform-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${FRONTEND_PUBLIC_API_BASE_URL:-http://legendheodongun.com:8080}
+        SERVER_API_BASE_URL: ${FRONTEND_SERVER_API_BASE_URL:-http://legendheodongun.com:8080}
+    container_name: coding-platform-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${FRONTEND_PUBLIC_API_BASE_URL:-http://legendheodongun.com:8080}
+      SERVER_API_BASE_URL: ${FRONTEND_SERVER_API_BASE_URL:-http://legendheodongun.com:8080}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "${FRONTEND_PORT:-3100}:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - coding-platform-network
+    profiles:
+      - frontend
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  coding-platform-network:
+    driver: bridge
