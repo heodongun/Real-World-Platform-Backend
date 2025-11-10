@@ -9,7 +9,7 @@
 2. **테스트 실행 준비 (`DockerExecutorService`)**
    - 문제에 저장된 `testFiles`, 사용자가 제출한 파일, 언어별 빌드 템플릿(Gradle Wrapper 또는 `requirements.txt`)을 하나의 맵으로 병합합니다.
 3. **DockerManager 실행**
-   - `/tmp/executions/<submissionId>` (컨테이너 내부) / `<repo>/executions/<submissionId>` (호스트) 경로에 모든 파일을 생성
+   - `/tmp/executions/<submissionId>` (컨테이너 내부) / `/tmp/coding-platform-executions/<submissionId>` (호스트 기본값, 반드시 절대 경로) 경로에 모든 파일을 생성
    - 언어별 이미지(`coding-platform-<language>:latest`) 존재 여부 확인 후, 없으면 자동 빌드
    - `gradle test --no-daemon` 또는 `pytest --junitxml=...` 명령을 실행하는 컨테이너를 생성/시작
    - stdout/stderr를 스트리밍하면서 타임아웃(`EXECUTION_TIMEOUT`, 기본 180초)을 감시
@@ -36,7 +36,7 @@ docker build -t coding-platform-python:latest src/main/resources/docker/python
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `EXECUTION_WORKSPACE` | `/tmp/executions` | 컨테이너 내부 작업 디렉터리 |
-| `DOCKER_HOST_WORKSPACE` | `./executions` | 호스트에 마운트되는 경로 (`docker-compose.yml`이 있는 `coding-platform-backend/` 기준 상대 경로) |
+| `DOCKER_HOST_WORKSPACE` | `/tmp/coding-platform-executions` | 호스트에 마운트되는 절대 경로. Docker 데몬이 직접 접근해야 하므로 상대 경로 사용 금지 |
 | `EXECUTION_TIMEOUT` | `180` | 한 제출당 최대 실행 시간(초) |
 | `MAX_MEMORY_MB` | `2048` | 컨테이너 메모리 제한 |
 | `MAX_CPU_SHARES` | `512` | 컨테이너 CPU shares (상대적 가중치) |

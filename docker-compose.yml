@@ -50,12 +50,12 @@ services:
       REDIS_PORT: 6379
       APP_ENV: ${APP_ENV}
       EXECUTION_WORKSPACE: ${EXECUTION_WORKSPACE}
-      DOCKER_HOST_WORKSPACE: ${DOCKER_HOST_WORKSPACE:-./executions}
+      DOCKER_HOST_WORKSPACE: ${DOCKER_HOST_WORKSPACE:-/tmp/coding-platform-executions}
       EXECUTION_TIMEOUT: 180
       MAX_MEMORY_MB: 2048
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${DOCKER_HOST_WORKSPACE:-./executions}:${EXECUTION_WORKSPACE:-/tmp/executions}
+      - ${DOCKER_HOST_WORKSPACE:-/tmp/coding-platform-executions}:${EXECUTION_WORKSPACE:-/tmp/executions}
     depends_on:
       postgres:
         condition: service_healthy

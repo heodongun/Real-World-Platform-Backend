@@ -110,6 +110,6 @@ coding-platform-backend/
 - 컨테이너는 `no-new-privileges`, 캡 능력 제거, 메모리/CPU 제한, 네트워크 차단 등 보안 설정이 적용됩니다.
 - 실행 결과와 피드백은 PostgreSQL에 저장되며, Redis는 향후 캐시/큐 용도로 확장할 수 있습니다.
 - 테스트 점수 규칙과 샘플 테스트 시나리오는 `docs/TEST_SCORING.md`, 전체 Docker 실행 흐름은 `docs/CONTAINER_EXECUTION.md`, API별 요청/응답 예시는 `docs/API_TEST_EXAMPLES.md`에 정리되어 있습니다.
-- `.env` 파일에 정의한 `DOCKER_HOST_WORKSPACE`(기본 `./executions`) 경로는 컨테이너와 공유되므로 git에 올리지 마시고, 필요 시 정기적으로 디스크를 정리하세요.
+- `.env` 파일에 정의한 `DOCKER_HOST_WORKSPACE`(기본 `/tmp/coding-platform-executions`)는 **항상 호스트 절대 경로**로 설정해야 Docker가 코드 실행 컨테이너에 마운트할 수 있습니다. git에 올리지 말고, 디스크 용량을 주기적으로 정리하세요.
 - 동일 compose 파일에서 `frontend` 서비스도 함께 기동되며, `.env`의 `FRONTEND_PUBLIC_API_BASE_URL`과 `FRONTEND_PORT`로 연결 대상을 제어할 수 있습니다.
 - 회원가입은 `/api/auth/register/code` → 메일 인증 코드 입력 → `/api/auth/register` 순으로 진행됩니다. Gmail SMTP(앱 비밀번호)를 `SPRING_MAIL_*` 변수에 넣어야 발송이 정상 동작합니다.
