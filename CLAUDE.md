@@ -33,6 +33,9 @@ A Kotlin-based coding challenge platform backend using Ktor framework. The syste
 # Start full stack (app, DB, Redis, monitoring)
 docker compose up -d --build
 
+# Start with frontend included
+docker compose --profile frontend up -d --build
+
 # View backend logs
 docker compose logs -f backend
 
@@ -42,7 +45,7 @@ curl http://localhost:8080/health
 # Stop all services
 docker compose down
 
-# Clean rebuild
+# Clean rebuild (removes volumes and cached data)
 docker compose down -v && docker compose up -d --build
 ```
 
@@ -99,10 +102,34 @@ Language-specific runners (`executor/runners/`) extend `LanguageRunner` and defi
 ### Database Schema
 
 Tables defined in `database/tables/`:
-- **Users**: id, username, email, password_hash, role, created_at
-- **Problems**: id, title, description, difficulty, test_cases, languages, created_at
-- **Submissions**: id, user_id, problem_id, language, source_code, status, score, feedback, submitted_at
-- **Executions**: id, execution_id, language, files, status, output, error, metrics, created_at
+
+- **Users** (`database/tables/Users.kt`):
+  - Stores user accounts with authentication credentials
+  - Fields: id (UUID), username, email, password_hash (BCrypt), role (USER/ADMIN), created_at
+  - Role-based access control for admin operations
+
+- **Problems** (`database/tables/Problems.kt`):
+  - Coding challenge definitions with embedded test files
+  - Fields: id, title, description, difficulty (EASY/MEDIUM/HARD), test_files (JSON), starter_code, languages (supported: KOTLIN/JAVA/PYTHON), created_at
+  - Test files must include path and content for test execution
+  - Test files are not exposed in API responses to prevent solution leakage
+
+- **Submissions** (`database/tables/Submissions.kt`):
+  - User code submissions with evaluation results
+  - Fields: id, user_id (FK to Users), problem_id (FK to Problems), language, source_code, status (PENDING/SUCCESS/FAILED/ERROR), score (0-100), feedback (JSON), submitted_at
+  - Score calculated as: `(passed_tests / total_tests) * 100`
+  - Feedback includes detailed test results, pass rate, and execution output
+
+- **Executions** (`database/tables/Executions.kt`):
+  - Docker execution history and metrics (for immediate code execution API)
+  - Fields: id, execution_id (UUID), language, files (JSON), status, output, error, execution_time_ms, memory_used_bytes, created_at
+  - Used for `/api/execute` endpoint, separate from problem submissions
+
+- **EmailVerifications** (`database/tables/EmailVerifications.kt`):
+  - Email verification codes for registration
+  - Fields: id, email, code (6-digit), created_at, verified_at, expires_at
+  - Codes expire after configured time period
+  - Two-step registration: request code → verify code → register
 
 ### Plugin System
 
@@ -144,11 +171,31 @@ APP_PORT=8080
 APP_ENV=development
 
 # Code execution constraints
-EXECUTION_TIMEOUT=30  # seconds
-MAX_MEMORY_MB=512
+EXECUTION_TIMEOUT=30  # seconds (180 in docker-compose)
+MAX_MEMORY_MB=512  # (2048 in docker-compose)
 MAX_CPU_SHARES=512
-EXECUTION_WORKSPACE=/tmp/executions
+EXECUTION_WORKSPACE=/tmp/executions  # container path
+DOCKER_HOST_WORKSPACE=/tmp/coding-platform-executions  # MUST be absolute host path for Docker bind mount
+
+# SMTP / Email (required for email verification)
+SPRING_MAIL_HOST=smtp.gmail.com
+SPRING_MAIL_PORT=587
+SPRING_MAIL_USERNAME=<your_email@gmail.com>
+SPRING_MAIL_PASSWORD=<gmail_app_password>
+SPRING_MAIL_STARTTLS_ENABLE=true
+SMTP_FROM_EMAIL=<your_email@gmail.com>
+SMTP_FROM_NAME=Coding Platform
+
+# Frontend (for docker-compose with frontend profile)
+FRONTEND_PUBLIC_API_BASE_URL=http://localhost:8080
+FRONTEND_SERVER_API_BASE_URL=http://backend:8080
+FRONTEND_PORT=3100  # Separate from Grafana's 3000
 ```
+
+**Critical Configuration Notes**:
+- `DOCKER_HOST_WORKSPACE`: MUST be an absolute path on the host machine. Docker daemon uses this to bind mount code execution workspaces into sandbox containers. Never commit this directory to git.
+- SMTP credentials: For Gmail, use an App Password (not your regular password). Required for email verification workflow.
+- Frontend ports: Default is 3100 to avoid conflict with Grafana's 3000.
 
 ### Service Registry Initialization
 
@@ -160,8 +207,11 @@ EXECUTION_WORKSPACE=/tmp/executions
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` - User registration
+- `POST /api/auth/register/code` - Request email verification code (step 1)
+- `POST /api/auth/register` - Complete registration with verified code (step 2)
 - `POST /api/auth/login` - Login (returns JWT)
+- `GET /api/users/profile` - Get current user profile (requires JWT)
+- `PUT /api/users/profile` - Update user profile (requires JWT)
 
 ### Problems
 - `GET /api/problems` - List all problems
@@ -224,7 +274,10 @@ EXECUTION_WORKSPACE=/tmp/executions
 
 ## Local Development Setup
 
-1. **Prerequisites**: JDK 17, Docker with socket access (`/var/run/docker.sock`)
+1. **Prerequisites**:
+   - JDK 17
+   - Docker with socket access (`/var/run/docker.sock`)
+   - Gmail account with App Password (for email verification)
 
 2. **Database Setup**:
    ```bash
@@ -234,7 +287,10 @@ EXECUTION_WORKSPACE=/tmp/executions
 3. **Environment Config**:
    ```bash
    cp .env.example .env
-   # Edit .env: set POSTGRES_HOST=localhost, REDIS_HOST=localhost
+   # Edit .env:
+   # - Set POSTGRES_HOST=localhost, REDIS_HOST=localhost for local dev
+   # - Configure SPRING_MAIL_* variables with Gmail credentials
+   # - Create workspace: mkdir -p /tmp/coding-platform-executions
    ```
 
 4. **Run Application**:
@@ -246,7 +302,46 @@ EXECUTION_WORKSPACE=/tmp/executions
    ```bash
    curl http://localhost:8080/health
    # Expected: {"status":"UP"}
+
+   # Test registration flow
+   curl -X POST http://localhost:8080/api/auth/register/code \
+     -H "Content-Type: application/json" \
+     -d '{"email":"test@example.com"}'
+   # Check email for verification code
    ```
+
+## Registration Workflow
+
+The platform uses a two-step email verification process:
+
+1. **Request Verification Code**:
+   ```bash
+   POST /api/auth/register/code
+   Body: {"email": "user@example.com"}
+   ```
+   - Generates 6-digit verification code
+   - Sends email via configured SMTP server
+   - Code expires after configured time (stored in EmailVerifications table)
+
+2. **Complete Registration**:
+   ```bash
+   POST /api/auth/register
+   Body: {
+     "email": "user@example.com",
+     "username": "myusername",
+     "password": "secure_password",
+     "code": "123456"
+   }
+   ```
+   - Validates verification code
+   - Creates user account with BCrypt password hash
+   - Returns JWT token for immediate login
+   - Marks email as verified
+
+Services involved:
+- `EmailService` (`services/email/EmailService.kt`): SMTP email delivery
+- `EmailVerificationService` (`services/EmailVerificationService.kt`): Code generation and validation
+- `AuthService` (`services/AuthService.kt`): Registration orchestration and JWT generation
 
 ## Code Patterns
 
@@ -303,20 +398,60 @@ fun setup() {
 ### Execution Tests
 Docker daemon must be accessible for integration tests involving `DockerManager`.
 
+## Submission Evaluation Flow
+
+The platform evaluates code submissions using a test-based scoring system:
+
+1. **User submits code** → `POST /api/submissions`
+2. **DockerExecutorService** merges user code + problem test files + build files
+3. **DockerManager** creates isolated workspace in `DOCKER_HOST_WORKSPACE/{submissionId}/`
+4. **Language-specific runner** executes tests (Gradle for Kotlin/Java, Pytest for Python)
+5. **TestRunnerService** parses test output (JUnit XML or pytest results)
+6. **Score calculation**: `round((passed_tests / total_tests) * 100)`
+7. **Feedback stored** in Submissions table with detailed test results
+8. **Cleanup**: Container removed, workspace deleted
+
+See `docs/TEST_SCORING.md` for detailed scoring rules and `docs/CONTAINER_EXECUTION.md` for execution flow.
+
 ## Common Issues
 
 ### Port Conflicts
-If port 8080/5432/6379 is occupied:
+If port 8080/5432/6379/3000/3100 is occupied:
 ```bash
 # Change in docker-compose.yml or .env
-# Example: "8081:8080" for backend
+# Example: "8081:8080" for backend, "3101:3000" for frontend
 ```
 
 ### Docker Socket Permission
 On Linux, if "Cannot connect to Docker daemon":
 ```bash
 sudo usermod -aG docker $USER
-# Log out and back in
+# Log out and back in, or: newgrp docker
+```
+
+### DOCKER_HOST_WORKSPACE Issues
+If submissions fail with "workspace not found":
+```bash
+# Ensure workspace directory exists and has proper permissions
+mkdir -p /tmp/coding-platform-executions
+chmod 777 /tmp/coding-platform-executions
+
+# Verify .env has absolute host path
+echo $DOCKER_HOST_WORKSPACE
+# Should output: /tmp/coding-platform-executions (or your custom path)
+```
+
+### Email Verification Not Working
+If registration emails aren't sent:
+```bash
+# Check SMTP credentials in .env
+# For Gmail, use App Password (not regular password):
+# 1. Enable 2FA on Gmail account
+# 2. Generate App Password at https://myaccount.google.com/apppasswords
+# 3. Use that password in SPRING_MAIL_PASSWORD
+
+# Test SMTP connection
+docker compose logs backend | grep "EmailService"
 ```
 
 ### Database Migration
@@ -329,6 +464,17 @@ Schema changes require updating:
 Auto-fix most issues:
 ```bash
 ./gradlew ktlintFormat
+```
+
+### Frontend Connection Issues
+If frontend can't reach backend:
+```bash
+# Check environment variables
+echo $FRONTEND_PUBLIC_API_BASE_URL  # Client-side API URL
+echo $FRONTEND_SERVER_API_BASE_URL  # Server-side API URL
+
+# For local development: http://localhost:8080
+# For production: http://your-domain.com:8080 or https://api.your-domain.com
 ```
 
 ## Deployment Notes

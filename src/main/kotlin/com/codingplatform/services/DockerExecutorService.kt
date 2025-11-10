@@ -191,13 +191,12 @@ class DockerExecutorService(
 
     private fun pythonRequirements(): String = """
         pytest==7.4.3
-        pytest-cov==4.1.0
         pytest-timeout==2.2.0
     """.trimIndent()
 
     private fun pythonPytestConfig(): String = """
         [pytest]
-        addopts = -v --tb=short --cov=. --cov-report=xml
+        addopts = -v --tb=short
     """.trimIndent()
 
     private data class TestRunResult(
