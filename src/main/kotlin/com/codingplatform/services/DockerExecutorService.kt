@@ -67,7 +67,7 @@ class DockerExecutorService(
 
         val command = when (problem.language) {
             Language.KOTLIN, Language.JAVA -> listOf("sh", "-c", "gradle test --no-daemon")
-            Language.PYTHON -> listOf("sh", "-c", "pytest --junitxml=test-results.xml")
+            Language.PYTHON -> listOf("sh", "-c", "pytest -vv --tb=long --junitxml=test-results.xml; cat test-results.xml 2>/dev/null || true")
         }
         logger.info("Test command: $command")
 
@@ -100,12 +100,15 @@ class DockerExecutorService(
             }
 
             Language.PYTHON -> {
-                userFiles.mapKeys { (path, _) ->
-                    if (!path.startsWith("src/") && !path.endsWith(".py")) {
-                        "$path.py"
-                    } else {
-                        path
+                // Convert all user Python files to solution.py for test compatibility
+                // Tests expect "from solution import ..." pattern
+                userFiles.entries.associate { (path, content) ->
+                    val normalizedPath = when {
+                        path == "main.py" || path == "Main.py" -> "solution.py"
+                        path.endsWith(".py") -> path
+                        else -> "$path.py"
                     }
+                    normalizedPath to content
                 }
             }
         }

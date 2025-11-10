@@ -65,7 +65,7 @@ class DockerManager(
             logger.info("Docker image ready: $image")
 
             logger.info("Creating container...")
-            val container = createContainer(executionId, image, workspace, command)
+            val container = createContainer(executionId, image, workspace, command, language)
             logger.info("Container created: ${container.id}")
 
             logger.info("Running container with timeout: ${timeoutSeconds}s")
@@ -154,7 +154,8 @@ class DockerManager(
         executionId: String,
         image: String,
         workspace: File,
-        command: List<String>
+        command: List<String>,
+        language: Language
     ): CreateContainerResponse {
         // Convert container workspace path to host workspace path for Docker bind mount
         val hostPath = workspace.absolutePath.replace(executionWorkspace, dockerHostWorkspace)
@@ -170,6 +171,12 @@ class DockerManager(
             .withCapDrop(Capability.ALL)
             .withSecurityOpts(listOf("no-new-privileges"))
 
+        // Set environment variables based on language
+        val envVars = mutableListOf("EXECUTION_TIMEOUT=$timeoutSeconds")
+        if (language == Language.PYTHON) {
+            envVars.add("PYTHONPATH=/workspace")
+        }
+
         return dockerClient.createContainerCmd(image)
             .withName("exec-$executionId")
             .withWorkingDir("/workspace")
@@ -178,7 +185,7 @@ class DockerManager(
             .withAttachStdout(true)
             .withAttachStderr(true)
             .withUser("1000:1000")
-            .withEnv("EXECUTION_TIMEOUT=$timeoutSeconds")
+            .withEnv(envVars)
             .exec()
     }
 
