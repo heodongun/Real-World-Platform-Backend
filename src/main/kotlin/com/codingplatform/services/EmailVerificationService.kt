@@ -8,6 +8,10 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toJavaInstant
@@ -17,12 +21,16 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.select
+import org.slf4j.LoggerFactory
 
 class EmailVerificationService(
     private val databaseFactory: DatabaseFactory,
     private val emailService: EmailService,
     private val expirationMinutes: Long = 10
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val logger = LoggerFactory.getLogger(EmailVerificationService::class.java)
+
     suspend fun requestCode(email: String) {
         val normalizedEmail = email.lowercase(Locale.getDefault())
         val code = generateCode()
@@ -40,7 +48,13 @@ class EmailVerificationService(
             }
         }
 
-        emailService.sendVerificationCode(normalizedEmail, code)
+        scope.launch {
+            try {
+                emailService.sendVerificationCode(normalizedEmail, code)
+            } catch (e: Exception) {
+                logger.error("Failed to send verification email to {}", normalizedEmail, e)
+            }
+        }
     }
 
     suspend fun consumeCode(email: String, code: String) {
