@@ -41,6 +41,7 @@ class ServiceRegistry(
     val problemService: ProblemService
     val submissionService: SubmissionService
     val dashboardService: DashboardService
+    val adminService: AdminService
 
     init {
         val dbConfig = DatabaseConfig(
@@ -85,6 +86,7 @@ class ServiceRegistry(
         submissionService = SubmissionService(databaseFactory, problemService, dockerExecutorService)
         userService = UserService(databaseFactory, authService)
         dashboardService = DashboardService(databaseFactory)
+        adminService = AdminService(databaseFactory)
     }
 
     suspend fun shutdown() {

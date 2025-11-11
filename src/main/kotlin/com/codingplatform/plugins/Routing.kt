@@ -1,5 +1,6 @@
 package com.codingplatform.plugins
 
+import com.codingplatform.routes.configureAdminRoutes
 import com.codingplatform.routes.configureAuthRoutes
 import com.codingplatform.routes.configureDashboardRoutes
 import com.codingplatform.routes.configureExecutionRoutes
@@ -22,5 +23,6 @@ fun Application.configureRouting(services: ServiceRegistry) {
         configureSubmissionRoutes(services.submissionService, services.problemService)
         configureExecutionRoutes(services.dockerExecutorService)
         configureDashboardRoutes(services.dashboardService, services.metricsRegistry)
+        configureAdminRoutes(services.adminService, services.submissionService)
     }
 }

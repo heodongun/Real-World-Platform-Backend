@@ -29,6 +29,7 @@ import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.select
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
 import java.time.Instant
 import java.util.UUID
@@ -47,6 +48,11 @@ class SubmissionService(
         databaseFactory.dbQuery {
             val userEntity = EntityID(userId, Users)
             Submissions.select { Submissions.userId eq userEntity }.map(::toSubmission)
+        }
+
+    suspend fun listAllSubmissions(): List<Submission> =
+        databaseFactory.dbQuery {
+            Submissions.selectAll().map(::toSubmission)
         }
 
     suspend fun createSubmission(userId: UUID, request: SubmissionRequest): Submission {
