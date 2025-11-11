@@ -11,6 +11,7 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toJavaInstant
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.select
 import org.jetbrains.exposed.sql.selectAll
@@ -83,7 +84,7 @@ class AdminService(
     }
 
     private fun ResultRow.toUserModel() = User(
-        id = this[Users.id],
+        id = this[Users.id].value,
         email = this[Users.email],
         name = this[Users.name],
         role = UserRole.valueOf(this[Users.role]),
