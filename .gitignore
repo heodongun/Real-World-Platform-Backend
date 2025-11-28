@@ -1,10 +1,15 @@
 .gradle/
 /build/
 /out/
-/.idea/
+.idea/
+.vscode/
 *.iml
 *.log
 .env
+.env.*
+!.env.example
 .DS_Store
+.claude/
+.codex/
 executions/
 database/*.lock
