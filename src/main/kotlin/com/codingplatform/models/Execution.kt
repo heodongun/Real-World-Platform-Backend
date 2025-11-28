@@ -24,7 +24,9 @@ enum class ExecutionStatus {
 enum class Language {
     KOTLIN,
     JAVA,
-    PYTHON
+    PYTHON,
+    SPRING_BOOT_KOTLIN,
+    SPRING_BOOT_JAVA
 }
 
 @Serializable

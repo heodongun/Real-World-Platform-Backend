@@ -116,8 +116,8 @@ class DockerManager(
 
     private fun ensureImageBuilt(language: Language): String {
         val imageName = when (language) {
-            Language.KOTLIN -> "coding-platform-kotlin:latest"
-            Language.JAVA -> "coding-platform-java:latest"
+            Language.KOTLIN, Language.SPRING_BOOT_KOTLIN -> "coding-platform-kotlin:latest"
+            Language.JAVA, Language.SPRING_BOOT_JAVA -> "coding-platform-java:latest"
             Language.PYTHON -> "coding-platform-python:latest"
         }
 
