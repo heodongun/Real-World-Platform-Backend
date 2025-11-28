@@ -46,6 +46,7 @@ docker compose logs -f backend
 - 즉시 코드 실행 API (테스트용)
 - 대시보드 통계 & 리더보드 + Prometheus Metrics
 - Docker 컨테이너 기반 다중 언어 실행 환경 (Kotlin/Java/Python)
+- Spring Boot(Java/Kotlin) 멀티 파일 과제 평가 및 시드 문제 제공
 
 ## 코드 실행 아키텍처
 1. 제출 생성 시 소스 파일을 격리된 작업공간에 저장

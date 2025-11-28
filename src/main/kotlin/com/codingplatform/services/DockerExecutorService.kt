@@ -66,7 +66,11 @@ class DockerExecutorService(
         val userSolutionFiles = prepareUserSolutionFiles(submission.files, problem.language)
 
         val command = when (problem.language) {
-            Language.KOTLIN, Language.JAVA -> listOf("sh", "-c", "gradle test --no-daemon")
+            Language.KOTLIN, Language.JAVA, Language.SPRING_BOOT_KOTLIN, Language.SPRING_BOOT_JAVA -> listOf(
+                "sh",
+                "-c",
+                "chmod +x gradlew && ./gradlew test --no-daemon"
+            )
             Language.PYTHON -> listOf("sh", "-c", "pytest -vv --tb=long --junitxml=test-results.xml; cat test-results.xml 2>/dev/null || true")
         }
         logger.info("Test command: $command")
@@ -89,10 +93,11 @@ class DockerExecutorService(
 
     private fun prepareUserSolutionFiles(userFiles: Map<String, String>, language: Language): Map<String, String> =
         when (language) {
-            Language.KOTLIN, Language.JAVA -> {
+            Language.KOTLIN, Language.JAVA, Language.SPRING_BOOT_KOTLIN, Language.SPRING_BOOT_JAVA -> {
+                val root = sourceRoot(language)
                 userFiles.mapKeys { (path, _) ->
                     if (!path.startsWith("src/")) {
-                        "src/main/kotlin/$path"
+                        "$root/$path"
                     } else {
                         path
                     }
@@ -120,6 +125,14 @@ class DockerExecutorService(
                 "build.gradle.kts" to generateGradleBuild(problem.language),
                 "gradlew" to gradlewScript(),
                 "gradle/wrapper/gradle-wrapper.properties" to gradleWrapperProperties()
+            )
+
+            Language.SPRING_BOOT_KOTLIN, Language.SPRING_BOOT_JAVA -> mapOf(
+                "settings.gradle.kts" to "rootProject.name = \"solution\"",
+                "build.gradle.kts" to generateGradleBuild(problem.language),
+                "gradlew" to gradlewScript(),
+                "gradle/wrapper/gradle-wrapper.properties" to gradleWrapperProperties(),
+                "src/main/resources/application.yml" to springBootAppConfig()
             )
 
             Language.PYTHON -> mapOf(
@@ -168,6 +181,82 @@ class DockerExecutorService(
 
                 tasks.test {
                     useJUnitPlatform()
+                    testLogging {
+                        events("passed", "skipped", "failed")
+                    }
+                }
+            """.trimIndent()
+
+            Language.SPRING_BOOT_KOTLIN -> """
+                import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+                plugins {
+                    id("org.springframework.boot") version "3.2.0"
+                    id("io.spring.dependency-management") version "1.1.4"
+                    kotlin("jvm") version "1.9.20"
+                    kotlin("plugin.spring") version "1.9.20"
+                }
+
+                group = "com.codingplatform"
+                version = "0.0.1-SNAPSHOT"
+
+                repositories {
+                    mavenCentral()
+                }
+
+                dependencies {
+                    implementation("org.springframework.boot:spring-boot-starter-web")
+                    implementation("org.springframework.boot:spring-boot-starter-validation")
+                    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+
+                    testImplementation("org.springframework.boot:spring-boot-starter-test")
+                }
+
+                tasks.withType<KotlinCompile> {
+                    kotlinOptions {
+                        jvmTarget = "17"
+                    }
+                }
+
+                tasks.test {
+                    useJUnitPlatform()
+                    testLogging {
+                        events("passed", "skipped", "failed")
+                    }
+                }
+            """.trimIndent()
+
+            Language.SPRING_BOOT_JAVA -> """
+                plugins {
+                    id("org.springframework.boot") version "3.2.0"
+                    id("io.spring.dependency-management") version "1.1.4"
+                    id("java")
+                }
+
+                group = "com.codingplatform"
+                version = "0.0.1-SNAPSHOT"
+
+                java {
+                    sourceCompatibility = JavaVersion.VERSION_17
+                    targetCompatibility = JavaVersion.VERSION_17
+                }
+
+                repositories {
+                    mavenCentral()
+                }
+
+                dependencies {
+                    implementation("org.springframework.boot:spring-boot-starter-web")
+                    implementation("org.springframework.boot:spring-boot-starter-validation")
+
+                    testImplementation("org.springframework.boot:spring-boot-starter-test")
+                }
+
+                tasks.test {
+                    useJUnitPlatform()
+                    testLogging {
+                        events("passed", "skipped", "failed")
+                    }
                 }
             """.trimIndent()
 
@@ -192,6 +281,16 @@ class DockerExecutorService(
         zipStorePath=wrapper/dists
     """.trimIndent()
 
+    private fun springBootAppConfig(): String = """
+        spring:
+          application:
+            name: coding-platform-solution
+          main:
+            banner-mode: off
+        server:
+          port: 0
+      """.trimIndent()
+
     private fun pythonRequirements(): String = """
         pytest==7.4.3
         pytest-timeout==2.2.0
@@ -206,6 +305,13 @@ class DockerExecutorService(
         val executionResult: ExecutionResult,
         val testResults: TestResults
     )
+
+    private fun sourceRoot(language: Language): String =
+        when (language) {
+            Language.JAVA, Language.SPRING_BOOT_JAVA -> "src/main/java"
+            Language.KOTLIN, Language.SPRING_BOOT_KOTLIN -> "src/main/kotlin"
+            Language.PYTHON -> ""
+        }
 
     companion object {
         private const val MAX_SCORE = 100

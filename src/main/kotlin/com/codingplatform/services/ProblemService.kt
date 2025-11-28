@@ -177,6 +177,223 @@ class ProblemService(
                         }
                     }
                 """.trimIndent()
+            ),
+            SampleProblem(
+                slug = "springboot-order-api",
+                title = "Spring Boot 주문 & 재고 API",
+                difficulty = "HARD",
+                language = Language.SPRING_BOOT_KOTLIN,
+                tags = listOf("spring-boot", "rest", "kotlin", "service"),
+                description = """
+                    ## 요구사항
+                    - Spring Boot 기반으로 RESTful한 주문/재고 API를 구현합니다.
+                    - 상품 등록/조회, 주문 생성, 재고 차감, 에러 응답까지 최소 3개 이상의 클래스로 분리하세요.
+                    - Controller, Service, Repository/Storage 레이어를 나누고 DTO를 사용합니다.
+                    - 다중 파일 구조를 유지해야 하며, 테스트에서 랜덤 포트로 API를 호출해 검증합니다.
+
+                    ### 엔드포인트
+                    - `POST /api/products` – `{sku, name, price, stock}`를 받아 상품을 등록하거나 업데이트합니다. 응답은 동일한 필드와 201 상태 코드를 반환하세요.
+                    - `GET /api/products/{sku}` – 단일 상품을 조회합니다. 없으면 404를 내려주세요.
+                    - `POST /api/orders` – `customer`와 `items[{sku, quantity}]`를 받아 주문을 생성합니다.
+                        - 총액을 계산하고, 각 품목의 `linePrice`를 함께 응답하세요.
+                        - 재고가 부족하면 400과 `{ "error": "INSUFFICIENT_STOCK" }`를 반환하세요.
+                        - 주문이 성공하면 남은 재고가 차감되어야 합니다.
+                """.trimIndent(),
+                testFiles = mapOf(
+                    "src/test/kotlin/com/codingplatform/order/OrderApiTest.kt" to """
+                        package com.codingplatform.order
+
+                        import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+                        import org.assertj.core.api.Assertions.assertThat
+                        import org.junit.jupiter.api.Test
+                        import org.springframework.beans.factory.annotation.Autowired
+                        import org.springframework.boot.autoconfigure.SpringBootApplication
+                        import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+                        import org.springframework.boot.test.context.SpringBootTest
+                        import org.springframework.http.MediaType
+                        import org.springframework.test.web.servlet.MockMvc
+                        import org.springframework.test.web.servlet.get
+                        import org.springframework.test.web.servlet.post
+
+                        @SpringBootTest(classes = [OrderTestApplication::class])
+                        @AutoConfigureMockMvc
+                        class OrderApiTest(
+                            @Autowired private val mockMvc: MockMvc
+                        ) {
+                            private val mapper = jacksonObjectMapper()
+
+                            @Test
+                            fun `상품 등록 후 조회`() {
+                                mockMvc.post("/api/products") {
+                                    contentType = MediaType.APPLICATION_JSON
+                                    content = """{"sku":"A-100","name":"Starter Kit","price":12000,"stock":10}"""
+                                }.andExpect {
+                                    status { isCreated() }
+                                    jsonPath("\$.sku") { value("A-100") }
+                                    jsonPath("\$.stock") { value(10) }
+                                }
+
+                                mockMvc.get("/api/products/A-100")
+                                    .andExpect {
+                                        status { isOk() }
+                                        jsonPath("\$.name") { value("Starter Kit") }
+                                        jsonPath("\$.price") { value(12000) }
+                                        jsonPath("\$.stock") { value(10) }
+                                    }
+                            }
+
+                            @Test
+                            fun `주문 생성 시 재고 차감과 총액 계산`() {
+                                mockMvc.post("/api/products") {
+                                    contentType = MediaType.APPLICATION_JSON
+                                    content = """{"sku":"B-200","name":"API Guide","price":15000,"stock":5}"""
+                                }.andExpect { status { isCreated() } }
+
+                                val responseBody = mockMvc.post("/api/orders") {
+                                    contentType = MediaType.APPLICATION_JSON
+                                    content = """
+                                        {
+                                          "customer": "lee",
+                                          "items": [
+                                            {"sku": "B-200", "quantity": 2}
+                                          ]
+                                        }
+                                    """.trimIndent()
+                                }.andExpect {
+                                    status { isCreated() }
+                                    jsonPath("\$.items[0].sku") { value("B-200") }
+                                    jsonPath("\$.items[0].quantity") { value(2) }
+                                }.andReturn().response.contentAsString
+
+                                val json = mapper.readTree(responseBody)
+                                assertThat(json["totalPrice"].asInt()).isEqualTo(30000)
+                                assertThat(json["items"].size()).isEqualTo(1)
+                                assertThat(json["items"][0]["linePrice"].asInt()).isEqualTo(30000)
+
+                                mockMvc.get("/api/products/B-200")
+                                    .andExpect {
+                                        status { isOk() }
+                                        jsonPath("\$.stock") { value(3) }
+                                    }
+                            }
+
+                            @Test
+                            fun `재고 부족 시 400 응답`() {
+                                mockMvc.post("/api/products") {
+                                    contentType = MediaType.APPLICATION_JSON
+                                    content = """{"sku":"C-300","name":"Monitor","price":210000,"stock":1}"""
+                                }.andExpect { status { isCreated() } }
+
+                                mockMvc.post("/api/orders") {
+                                    contentType = MediaType.APPLICATION_JSON
+                                    content = """
+                                        {"customer":"kim","items":[{"sku":"C-300","quantity":2}]}
+                                    """.trimIndent()
+                                }.andExpect {
+                                    status { isBadRequest() }
+                                    jsonPath("\$.error") { value("INSUFFICIENT_STOCK") }
+                                }
+                            }
+                        }
+
+                        @SpringBootApplication(scanBasePackages = ["com.codingplatform.order"])
+                        class OrderTestApplication
+                    """.trimIndent()
+                ),
+                starterCode = """
+                    package com.codingplatform.order
+
+                    import org.springframework.boot.autoconfigure.SpringBootApplication
+                    import org.springframework.boot.runApplication
+                    import org.springframework.http.HttpStatus
+                    import org.springframework.stereotype.Repository
+                    import org.springframework.stereotype.Service
+                    import org.springframework.web.bind.annotation.*
+                    import org.springframework.web.server.ResponseStatusException
+
+                    @SpringBootApplication
+                    class OrderApplication
+
+                    fun main(args: Array<String>) {
+                        runApplication<OrderApplication>(*args)
+                    }
+
+                    data class Product(
+                        val sku: String,
+                        val name: String,
+                        val price: Int,
+                        val stock: Int
+                    )
+
+                    data class OrderItemRequest(val sku: String, val quantity: Int)
+                    data class OrderRequest(val customer: String, val items: List<OrderItemRequest>)
+
+                    data class OrderItemResponse(val sku: String, val quantity: Int, val linePrice: Int)
+                    data class OrderResponse(val orderId: String, val customer: String, val totalPrice: Int, val items: List<OrderItemResponse>)
+
+                    interface ProductRepository {
+                        fun save(product: Product): Product
+                        fun findBySku(sku: String): Product?
+                        fun decrementStock(sku: String, quantity: Int): Product
+                    }
+
+                    @Repository
+                    class InMemoryProductRepository : ProductRepository {
+                        private val storage = linkedMapOf<String, Product>()
+
+                        override fun save(product: Product): Product {
+                            storage[product.sku] = product
+                            return product
+                        }
+
+                        override fun findBySku(sku: String): Product? = storage[sku]
+
+                        override fun decrementStock(sku: String, quantity: Int): Product {
+                            val current = storage[sku] ?: throw IllegalArgumentException("product_not_found")
+                            require(current.stock - quantity >= 0) { "INSUFFICIENT_STOCK" }
+                            val updated = current.copy(stock = current.stock - quantity)
+                            storage[sku] = updated
+                            return updated
+                        }
+                    }
+
+                    @Service
+                    class OrderService(
+                        private val repository: ProductRepository
+                    ) {
+                        fun registerProduct(request: Product): Product {
+                            // TODO: validate input, handle duplicates and return saved product
+                            return repository.save(request)
+                        }
+
+                        fun findProduct(sku: String): Product? = repository.findBySku(sku)
+
+                        fun placeOrder(request: OrderRequest): OrderResponse {
+                            // TODO: calculate totals, decrement stock, and build response DTOs
+                            throw UnsupportedOperationException("implement order logic")
+                        }
+                    }
+
+                    @RestController
+                    @RequestMapping("/api")
+                    class OrderController(
+                        private val orderService: OrderService
+                    ) {
+                        @PostMapping("/products")
+                        @ResponseStatus(HttpStatus.CREATED)
+                        fun register(@RequestBody product: Product): Product =
+                            orderService.registerProduct(product)
+
+                        @GetMapping("/products/{sku}")
+                        fun get(@PathVariable sku: String): Product =
+                            orderService.findProduct(sku) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+                        @PostMapping("/orders")
+                        @ResponseStatus(HttpStatus.CREATED)
+                        fun place(@RequestBody request: OrderRequest): OrderResponse =
+                            orderService.placeOrder(request)
+                    }
+                """.trimIndent()
             )
         )
 
