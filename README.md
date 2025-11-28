@@ -33,6 +33,7 @@ docker compose logs -f backend
 ### 기본 접속 정보
 - Backend API: `http://localhost:8080`
 - Frontend UI (Docker): `http://localhost:${FRONTEND_PORT}` (기본 `3100`, Grafana와 포트 충돌 방지를 위해 분리)
+- Frontend 배포: https://real-world-platform-front.pages.dev/
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 - Prometheus: `http://localhost:9090`
